@@ -2,6 +2,7 @@
 
 import argparse
 import socket
+import ssl
 
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
@@ -19,10 +20,11 @@ class Crawler:
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
         mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        mysocket = ssl.wrap_socket(mysocket)
         mysocket.connect((self.server, self.port))
         mysocket.send(request.encode('ascii'))
 
-        data = mysocket.recv(1000)
+        data = mysocket.recv(99999)
         print("Response:\n%s" % data.decode('ascii'))
 
 if __name__ == "__main__":
