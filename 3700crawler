@@ -27,6 +27,13 @@ class Crawler:
         data = mysocket.recv(99999)
         print("Response:\n%s" % data.decode('ascii'))
 
+        request2 = "GET /accounts/login/ HTTP/1.0\r\n\r\n"
+        #mysocket.connect((self.server, self.port))
+        mysocket.send(request2.encode('ascii'))
+        data2 = mysocket.recv(99999)
+        print(data2)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='crawl Fakebook')
     parser.add_argument('-s', dest="server", type=str, default=DEFAULT_SERVER, help="The server to crawl")
