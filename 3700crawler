@@ -3,7 +3,7 @@
 import argparse
 import socket
 import ssl
-
+from html.parser import HTMLParser
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
@@ -13,9 +13,10 @@ class Crawler:
         self.port = args.port
         self.username = args.username
         self.password = args.password
+        self.csrf = None
 
     def run(self):
-        request = "GET / HTTP/1.0\r\n\r\n"
+        request = "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
@@ -24,8 +25,37 @@ class Crawler:
         mysocket.connect((self.server, self.port))
         mysocket.send(request.encode('ascii'))
 
-        data = mysocket.recv(99999)
+        data = mysocket.recv(90000)
         print("Response:\n%s" % data.decode('ascii'))
+        # 24824 contend length
+        
+        request = "GET /accounts/login/?next=/fakebook/ HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
+        
+        
+        mysocket.send(request.encode("ascii"))
+        data = mysocket.recv(90000)
+        print("Response:\n%s" % data.decode('ascii'))
+        self.csrf = self.getcsrf(data) 
+        
+        request = self.Build_Post_Request() 
+        mysocket.send(request.encode("ascii"))
+        data = mysocket.recv(90000)
+        print("Response:\n%s" % data.decode('ascii'))
+    def getcsrf(self,data): 
+        HTMLParser.feed(data)
+        HTMLParser.handle_data(data)
+        
+    def Build_Post_Request(self): 
+        request = "POST /accounts/login/?username={self.username}&password={self.password}&value=ZBL5XHFTo7xtzGKmxgZZ4dzfKhSntQP8WcQRDVZ3vngPq9csWRPwW3QGUMTKkNmY HTTP/1.0\r\n\r\n" # url + parameters + user data
+        return request
+        # utf-8
+        # username 
+        # password 
+        # token 
+        # parameters
+            
+def Sending_Request(self, request): 
+    pass
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='crawl Fakebook')
