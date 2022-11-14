@@ -3,9 +3,28 @@
 import argparse
 import socket
 import ssl
+import re
 from html.parser import HTMLParser
+
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
+
+datalist = []
+taglist = []
+endtaglist = []
+
+class MyHTMLParser(HTMLParser):
+
+    def handle_data(self, data):
+        datalist.append(data)
+
+    def handlestart_tag(self, tag, attrs):
+        for attr in attrs:
+            taglist.append(attr)
+
+    def handleend_tag(self, tag):
+        endtaglist.append(tag)
+
 
 class Crawler:
     def __init__(self, args):
@@ -14,9 +33,16 @@ class Crawler:
         self.username = args.username
         self.password = args.password
         self.csrf = None
+        self.sessionid = None
+        self.middleware = ""
+        self.testlist = []
+        self.parser = MyHTMLParser()
+        self.visited = []
+        self.queue = []
+
 
     def run(self):
-        request = "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
+        request = "GET / HTTP/1.0\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
@@ -27,41 +53,125 @@ class Crawler:
 
         data = mysocket.recv(90000)
         print("Response:\n%s" % data.decode('ascii'))
+        mysocket.close()
+
         # 24824 contend length
+        newsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newsocket = ssl.wrap_socket(newsocket)
+        newsocket.connect((self.server, self.port))
         
-        request = "GET /accounts/login/?next=/fakebook/ HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
+        request = "GET /accounts/login/?next=/fakebook/ HTTP/1.0\r\n\r\n"
         
+        print("request sent!" + request)
+        newsocket.send(request.encode("ascii"))
+        data1 = newsocket.recv(90000)
+        #self.parser.feed(data.decode('ascii'))
+        print("Response:\n%s" % data1.decode('ascii'))
+        datainfo = data1.decode('ascii').split()
+        for i in datainfo:
+            if "csrftoken" in i:
+                self.csrf= i[:len(i) -1]
+            elif "sessionid" in i:
+                self.sessionid = i[:len(i) - 1]
+            elif "value" in i:
+                self.testlist.append(i) 
+
+        self.middleware = self.testlist[0]
+        self.middleware = self.middleware[:len(self.middleware) - 2]
+        self.middleware = self.middleware[7 : len(self.middleware)]
+        #print(self.middleware)                         
+
+        #print("this is the data" + str(data1.decode('ascii').split()))
+
+        payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
+        Contentlength = len(payload)
+        prequest = "POST /accounts/login/ HTTP/1.0\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: close\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://proj5.3700.network/accounts/login/?next=/fakebook/\r\n\r\n"  
+        #right now the tokens have an unecessary colong need to remove
+
+        teststring = prequest + payload
+        print(teststring)
+
+        newsocket.close()
+
+        newsocket2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newsocket2 = ssl.wrap_socket(newsocket2)
+        newsocket2.connect((self.server, self.port))
+        newsocket2.send(teststring.encode('ascii'))
+        data3 = newsocket2.recv(90000)
+        datainfo2 = data3.decode('ascii').split()
+        for i in datainfo2:
+            if "csrftoken" in i:
+                self.csrf= i[:len(i) -1]
+            elif "sessionid" in i:
+                self.sessionid = i[:len(i) - 1]
+            elif "value" in i:
+                self.testlist.append(i) 
+
+        print("this is what the new send produced: " + data3.decode('ascii'))
+
+        newsocket2.close()
+
+
+        #test get request
+        teststring2 = "GET /fakebook/ HTTP/1.0\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n\r\n"
+        print("hopefully this string has updated: " + teststring2)
+
+
+        newsocket3 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        newsocket3 = ssl.wrap_socket(newsocket3)
+        newsocket3.connect((self.server, self.port))
+        newsocket3.send(teststring2.encode('ascii'))
+        data4 = newsocket3.recv(90000)
+        print(data4.decode('ascii'))
+
+
+
+
+
+         
+        #self.csrf = self.getcsrf(data) 
         
-        mysocket.send(request.encode("ascii"))
-        data = mysocket.recv(90000)
-        print("Response:\n%s" % data.decode('ascii'))
-        self.csrf = self.getcsrf(data) 
+        #print("request sent!" + request)
+        #mysocket.send(request.encode("ascii"))
+        #data = mysocket.recv(90000)
+        #print("Response:\n%s" % data.decode('ascii'))
+        #print("this is the data" + str(data.decode('ascii').split()))
+
+        #print(self.sessionid)
+        #print(self.csrf)
+
+
+
+    #def getcsrf(self,data): 
+    #    HTMLParser.feed(data)
+    #    HTMLParser.handle_data(data)
         
-        request = self.Build_Post_Request() 
-        mysocket.send(request.encode("ascii"))
-        data = mysocket.recv(90000)
-        print("Response:\n%s" % data.decode('ascii'))
-    def getcsrf(self,data): 
-        HTMLParser.feed(data)
-        HTMLParser.handle_data(data)
-        
-    def Build_Post_Request(self): 
-        request = "POST /accounts/login/?username={self.username}&password={self.password}&value=ZBL5XHFTo7xtzGKmxgZZ4dzfKhSntQP8WcQRDVZ3vngPq9csWRPwW3QGUMTKkNmY HTTP/1.0\r\n\r\n" # url + parameters + user data
-        return request
+    def Build_Post_Request(self):
+        payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F"
+        print(payload)
+        print(len(payload))
+        #content length can literally just be the length of the payload
+
+        #request = "POST /accounts/login/?username={self.username}&password={self.password} HTTP/1.0\r\n\r\n" # url + parameters + user data
+        return payload
+        #header and body, 
+        #
         # utf-8
         # username 
         # password 
         # token 
         # parameters
-            
-def Sending_Request(self, request): 
-    pass
 
-        request2 = "GET /accounts/login/ HTTP/1.0\r\n\r\n"
-        #mysocket.connect((self.server, self.port))
-        mysocket.send(request2.encode('ascii'))
-        data2 = mysocket.recv(99999)
-        print(data2)
+    def Build_Get_Request(self):
+        pass    
+            
+    def Sending_Request(self, request): 
+        pass
+
+    def createnewsocket(self, socket):
+        pass
+
+
 
 
 if __name__ == "__main__":
