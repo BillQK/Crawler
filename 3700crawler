@@ -2,7 +2,7 @@
 
 import argparse
 import socket
-
+import ssl 
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
@@ -12,18 +12,78 @@ class Crawler:
         self.port = args.port
         self.username = args.username
         self.password = args.password
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = ssl.wrap_socket(self.socket)
+        self.socket.connect((self.server,self.port))
+        self.csrftoken = None 
+        self.sessionid = None 
+        self.valueList = []
+        self.middleware = None 
+        
+        
 
     def run(self):
-        request = "GET / HTTP/1.0\r\n\r\n"
+        request = "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
         print(request)
-        mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        mysocket.connect((self.server, self.port))
-        mysocket.send(request.encode('ascii'))
+        self.socket.send(request.encode('ascii'))
 
-        data = mysocket.recv(1000)
+        data = self.socket.recv(9000)
         print("Response:\n%s" % data.decode('ascii'))
+        
+        self.login()
+       # self.tranverse()
+    
+    def login(self): 
+        request = "GET /accounts/login/?next=fakebook/ HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
+        self.socket.send(request.encode('ascii'))
+        
+        data = self.socket.recv(9000) 
+        print("Response:\n%s" % data.decode('ascii'))
+        
+        self.exactInformationFromHeaders(data.decode('ascii')) 
+        
+        postRequest = self.buildPost_Request()
+
+        self.socket.send(postRequest.encode('ascii'))
+        
+        data = self.socket.recv(9000) 
+        print("Response:\n%s" % data.decode('ascii'))
+        
+        self.exactInformationFromHeaders(data.decode('ascii'))
+        
+        getRequest = f"GET /fakebook/ HTTP/1.0\r\nCookie: {self.csrftoken}; {self.sessionid}\r\nConnection: keep-alive\r\n\r\n"
+        print(getRequest)
+        self.socket.send(getRequest.encode('ascii'))
+        
+        data = self.socket.recv(10000) 
+        print("Response:\n%s" % data.decode('ascii'))
+        
+        self.exactInformationFromHeaders(data.decode('ascii'))
+        
+    
+    def exactInformationFromHeaders(self, data): 
+        datalist = data.split() 
+        for i in datalist: 
+            if 'csrftoken' in i: 
+                self.csrftoken = i[:len(i) - 1]
+            if 'sessionid' in i: 
+                self.sessionid = i[:len(i) -1 ]
+            if 'value' in i: 
+                self.valueList.append(i) 
+                
+        self.middleware = self.valueList[0] 
+        self.middleware = self.middleware[:len(self.middleware) -2]
+        self.middleware = self.middleware[7: len(self.middleware)]
+    
+    def buildPost_Request(self): 
+        payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
+        Contentlength = len(payload)
+        prequest = "POST /accounts/login/ HTTP/1.0\r\n" + "Cookie: "+ self.csrftoken + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: keep-alive\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://proj5.3700.network/accounts/login/?next=/fakebook/\r\n\r\n" 
+        return prequest + payload 
+    
+           
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='crawl Fakebook')
@@ -34,3 +94,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     sender = Crawler(args)
     sender.run()
+
