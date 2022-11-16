@@ -86,7 +86,7 @@ class Crawler:
         return prequest + payload 
     
     def traverse(self, data): 
-        x = re.findall("[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]", data)
+        x = re.findall("[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]", data)
         print(x)
         request = f"GET /fakebook/{x[0]}/ HTTP/1.0\r\nCookie: {self.csrftoken}; {self.sessionid} \r\nConnection: keep-alive\r\n\r\n"
         
