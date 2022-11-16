@@ -9,21 +9,34 @@ from html.parser import HTMLParser
 DEFAULT_SERVER = "proj5.3700.network"
 DEFAULT_PORT = 443
 
-datalist = []
-taglist = []
-endtaglist = []
+#array for storing the outgoing fakebook links with each person
+links = []
+#array for storing the outgoing fakebook friends list for each person
+friendlinks = []
+#array for storing the flags
+flags = []
 
+#HTML Parser class used for parsing HTML messages in this case mainly used for determining the flags
+#and valid fakebook friends, and fakebook friends lists
 class MyHTMLParser(HTMLParser):
 
+    def handle_starttag(self, tag, attrs):
+        if(tag == "a"):
+            for name, val in attrs:
+                if name == "href":
+                    if("fakebook" in val):
+                        if("friends" in val):
+                            friendlinks.append(val)
+                        else:
+                            links.append(val)    
+        #also if the tag just has a string print that instead                    
+
+
     def handle_data(self, data):
-        datalist.append(data)
-
-    def handlestart_tag(self, tag, attrs):
-        for attr in attrs:
-            taglist.append(attr)
-
-    def handleend_tag(self, tag):
-        endtaglist.append(tag)
+        if("FLAG" in data):
+            print(data)
+            flags.append(data)
+        
 
 
 class Crawler:
@@ -38,16 +51,106 @@ class Crawler:
         self.testlist = []
         self.parser = MyHTMLParser()
         self.visited = []
+        self.visitedpages = []
+        self.pagequeue = []
         self.queue = []
+        self.count = 0
 
-
+#wrap sockets in exceptions, and if we get an exception just re try
     def run(self):
-        #request = "GET / HTTP/1.0\r\n\r\n"
 
         print("Request to %s:%d" % (self.server, self.port))
-        self.loginProcess()
-        
 
+        self.loginProcess()
+        self.DFSidea()
+        print(self.count)
+
+         
+    def DFSidea(self):
+
+        #while loop for this to continue until we have gotten all flags/went through all pages or something
+        while (len(self.queue) > 0):
+            currentfriend = self.queue[0]
+            self.count += 1
+            #print("accessed a new item from the current friend:" + str(currentfriend))
+            req = self.BuildGetRequest(currentfriend, True)
+            try:
+                msg = self.BuildNewSocket(req)
+            except:
+                print("socket failed to transmit something")
+                continue
+
+            #want to check here if the command has failed in some way and handle it
+            if("HTTP/1.1 503" in msg):
+                #we continue with this loop to have our method retransmit the message
+                continue
+
+            elif("HTTP/1.1 4" in msg):
+                #print("this error triggered!2")
+                self.queue.remove(currentfriend)
+                self.visited.append(currentfriend)
+                continue
+
+            else:
+                #clear our previous entries in our link lists
+                friendlinks.clear()
+                self.parser.feed(msg)
+
+                if(len(flags) == 5):
+                    return
+
+                #if its passed the checks successfully we can remove the item from our queue and add it to visited
+                self.queue.remove(currentfriend)
+                self.visited.append(currentfriend)
+
+                ##purpose of this loop is to get all the next friend links we need to visit
+                #from a cursory glance looks like this runs fine...
+                self.pagequeue = friendlinks.copy()
+                #print("current pagequeue before we iterate:" + str(self.pagequeue))
+
+                while len(self.pagequeue) > 0:
+                    friendpage = self.pagequeue[0]
+                    #print("current page accessed: " + friendpage)
+                
+                    #then create get request for the next page, to add all those links to what we need to explore
+                    nextpagereq = self.BuildGetRequest(friendpage, True)
+                    nextpage = self.BuildNewSocket(nextpagereq)
+
+                    if("HTTP/1.1 503" in nextpage):
+                        #print("this error triggered!3")
+                        continue
+
+                    elif("HTTP/1.1 4" in nextpage):
+                        #print("this error triggered!4")
+                        self.pagequeue.remove(friendpage)
+                        self.visitedpages.append(friendpage)
+                        continue
+
+                    else:
+                        #again check if the http request has gone before I pop an item off our seen
+                        #put the else condition in later, need to have this working fine before I get help
+                        self.pagequeue.remove(friendpage)
+                        self.visitedpages.append(friendpage)
+
+                        self.parser.feed(nextpage)
+
+                        #now we are on the next page, then we need to add all the links that have not been explored for this friend
+                        #and then reset 
+                        for i in links:
+                            if(i not in self.visited and i not in self.queue):
+                                self.queue.append(i)
+
+                        #reset the links list so we can be prepared for the next website        
+                        links.clear()
+
+                        #for each item in our friends list check if there is a page that has not been explored yet
+                        newqueue = []
+                        for i in friendlinks:
+                            if(i not in self.visitedpages):
+                                newqueue.append(i)
+
+                        self.pagequeue = newqueue.copy()           
+        
     def findcookievariables(self, edata):
         datalist = edata.split()
         for i in datalist:
@@ -78,12 +181,28 @@ class Crawler:
         mysocket = ssl.wrap_socket(mysocket)
         mysocket.connect((self.server, self.port))
         mysocket.send(httpR.encode('ascii'))
-        data = mysocket.recv(90000).decode('ascii')
-        #need to fix this recieve method since it can sometimes drop headers...
-        print("Response: "+ data)
-        mysocket.close()
-        return data
+        contentlength = 0
+        
+        while True:
+            #revieve the header information, we recieve until we reach a new line by itself
+            #and get the content length out of it
+            #carefully manage buffer read however much we want, look through that, if thats not there
+            chunks = ""
+            while "\r\n\r\n" not in chunks:
+                chunk = mysocket.recv(4).decode('ascii')
+                chunks = chunks + chunk
 
+            headersplit = chunks.split("\r\n")
+            for i in headersplit:
+                if("Content-Length:" in i):
+                    contentlength = int(i[16: len(i)])       
+
+            msg = mysocket.recv(contentlength).decode('ascii')
+            totalmessage = chunks + msg
+            #print("Response: " + totalmessage)
+            mysocket.close()     
+            return totalmessage
+        
 
     def buildloginpostr(self):
         payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
@@ -114,15 +233,10 @@ class Crawler:
         req = self.BuildGetRequest(homepage, True)
         msg = self.BuildNewSocket(req)
 
-        #return the last message? so that the crawler knows where to begin
-
-
-
-
-        
-
-
-
+        self.parser.feed(msg)
+        self.queue = links.copy()
+        #print("starting queue: " + str(self.queue))
+        links.clear()
 
 
 if __name__ == "__main__":
