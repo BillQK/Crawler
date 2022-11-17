@@ -111,11 +111,14 @@ class Crawler:
                 while len(self.pagequeue) > 0:
                     friendpage = self.pagequeue[0]
                     #print("current page accessed: " + friendpage)
-                
-                    #then create get request for the next page, to add all those links to what we need to explore
-                    nextpagereq = self.BuildGetRequest(friendpage, True)
-                    nextpage = self.BuildNewSocket(nextpagereq)
-
+                    try: 
+                        #then create get request for the next page, to add all those links to what we need to explore
+                        nextpagereq = self.BuildGetRequest(friendpage, True)
+                        nextpage = self.BuildNewSocket(nextpagereq)
+                    except:
+                        print("Socket error: " + str("Socket build failed"))
+                        continue
+                    
                     if("HTTP/1.1 503" in nextpage):
                         #print("this error triggered!3")
                         continue
