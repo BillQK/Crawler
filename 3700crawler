@@ -34,7 +34,7 @@ class MyHTMLParser(HTMLParser):
 
     def handle_data(self, data):
         if("FLAG" in data):
-            print(data)
+            print(data[6:len(data)])
             flags.append(data)
         
 
@@ -56,29 +56,27 @@ class Crawler:
         self.queue = []
         self.count = 0
 
-#wrap sockets in exceptions, and if we get an exception just re try
     def run(self):
-
-        print("Request to %s:%d" % (self.server, self.port))
-
         self.loginProcess()
         self.DFSidea()
-        print(self.count)
 
          
     def DFSidea(self):
 
         #while loop for this to continue until we have gotten all flags/went through all pages or something
-        while (len(self.queue) > 0):
+        k = 0
+
+        while k > 1:
             currentfriend = self.queue[0]
             self.count += 1
             #print("accessed a new item from the current friend:" + str(currentfriend))
             req = self.BuildGetRequest(currentfriend, True)
+
             try:
                 msg = self.BuildNewSocket(req)
             except:
-                print("socket failed to transmit something")
-                continue
+                print("handled the case when accessing off queue")
+                break    
 
             #want to check here if the command has failed in some way and handle it
             if("HTTP/1.1 503" in msg):
@@ -114,7 +112,12 @@ class Crawler:
                 
                     #then create get request for the next page, to add all those links to what we need to explore
                     nextpagereq = self.BuildGetRequest(friendpage, True)
-                    nextpage = self.BuildNewSocket(nextpagereq)
+
+                    try:
+                        nextpage = self.BuildNewSocket(nextpagereq)
+                    except:
+                        print("should have handled case when error in friendslist")
+                        break    
 
                     if("HTTP/1.1 503" in nextpage):
                         #print("this error triggered!3")
@@ -149,7 +152,9 @@ class Crawler:
                             if(i not in self.visitedpages):
                                 newqueue.append(i)
 
-                        self.pagequeue = newqueue.copy()           
+                        self.pagequeue = newqueue.copy()
+            
+            k + 1                       
         
     def findcookievariables(self, edata):
         datalist = edata.split()
@@ -168,12 +173,14 @@ class Crawler:
 
     #rebuild the socket with each request
     def BuildGetRequest(self, url, cookies):
-        request = "GET " + url + " HTTP/1.0\r\n"
+        #1.1 requires a host field, shouldn't be too hard
+        request = "GET " + url + " HTTP/1.1\r\nHost: " + self.server + "\r\n" 
         if(cookies):
             cookiestring = "Cookie: " + self.csrf + "; " + self.sessionid + "\r\n"
             request = request + cookiestring
 
         request = request + "\r\n"
+        print(request)
         return request     
 
     def BuildNewSocket(self, httpR):
@@ -199,7 +206,7 @@ class Crawler:
 
             msg = mysocket.recv(contentlength).decode('ascii')
             totalmessage = chunks + msg
-            #print("Response: " + totalmessage)
+            print("Response: " + totalmessage)
             mysocket.close()     
             return totalmessage
         
@@ -207,8 +214,9 @@ class Crawler:
     def buildloginpostr(self):
         payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
         Contentlength = len(payload)
-        prequest = "POST /accounts/login/ HTTP/1.0\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: close\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://proj5.3700.network/accounts/login/?next=/fakebook/\r\n\r\n"  
+        prequest = "POST /accounts/login/ HTTP/1.0\r\nHost: " + self.server + "\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: close\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://proj5.3700.network/accounts/login/?next=/fakebook/\r\n\r\n"  
         post = prequest + payload
+        print(post)
         return post
 
     def loginProcess(self):
