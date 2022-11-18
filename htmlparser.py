@@ -20,7 +20,7 @@ class MyHTMLParser(HTMLParser):
 
     def handle_data(self, data):
         if("FLAG" in data):
-            print(data)
+            print(data[6:len(data)])
 
 parser = MyHTMLParser()
 parser.feed('<h2 class=secret_flag style="color:red">FLAG: 64-characters-of-random-alphanumerics</h2>')
@@ -33,7 +33,6 @@ test = string1.split('\r\n')
 for i in test:
     if("Content-Length:" in i):
         print(i[16: len(i)])
-        print(len(i))
 
 
 
