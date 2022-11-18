@@ -53,10 +53,14 @@ class Crawler:
         self.visitedpages = set()
         self.pagequeue = []
         self.queue = []
+        #count for keeping track of when we need to rebuild the socket
+        self.count = 0
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = ssl.wrap_socket(self.socket)
+        self.socket.connect((self.server, self.port)) 
+
 
     def run(self):
-        print(self.server)
-        print(self.port)
         self.loginProcess()
         self.DFS()
 
@@ -64,6 +68,11 @@ class Crawler:
     #we check to see if they contain any flags, then add all their unseen friends to queue, and check them later     
     def DFS(self):
         while len(self.queue) > 0:
+            self.count = self.count + 1
+            if(self.count % 100 == 0):
+                self.BuildSocket()
+                continue
+
             currentfriend = self.queue[0]
             req = self.BuildGetRequest(currentfriend, True)
 
@@ -101,7 +110,6 @@ class Crawler:
                 while len(self.pagequeue) > 0:
                     friendpage = self.pagequeue[0]
 
-                
                     #then create get request for the next page, to add all those links to what we need to explore
                     nextpagereq = self.BuildGetRequest(friendpage, True)
 
@@ -160,43 +168,43 @@ class Crawler:
 
     #rebuild the socket with each request
     def BuildGetRequest(self, url, cookies):
-        request = "GET " + url + " HTTP/1.1\r\nHost: " + self.server + "\r\n" 
+        request = "GET " + url + " HTTP/1.1\r\nHost: " + self.server + "\r\nConnection: keep-alive\r\n" 
         if(cookies):
-            cookiestring = "Cookie: " + self.csrf + "; " + self.sessionid + "\r\n" + "Connection: keep-alive\r\n" 
+            cookiestring = "Cookie: " + self.csrf + "; " + self.sessionid + "\r\n"  
             request = request + cookiestring
 
         request = request + "\r\n"
-        return request     
+        return request
 
-    #since we specify connection: close, we have to rebuild a socket with each request
-    def BuildNewSocket(self, httpR):
+    def BuildSocket(self):
+        self.socket.close()
         mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         mysocket = ssl.wrap_socket(mysocket)
         mysocket.connect((self.server, self.port))
-        mysocket.send(httpR.encode('ascii'))
+        self.socket = mysocket         
+
+    #since we specify connection: close, we have to rebuild a socket with each request
+    def BuildNewSocket(self, httpR):
+        self.socket.send(httpR.encode('ascii'))
         contentlength = 0
         
         #receiving loop to properly recve all information from an HTTP response
         while True:
             chunks = ""
             while "\r\n\r\n" not in chunks:
-                chunk = mysocket.recv(4).decode('ascii')
+                chunk = self.socket.recv(4).decode('ascii')
                 chunks = chunks + chunk
 
             headersplit = chunks.split("\r\n")
             for i in headersplit:
                 if("Content-Length:" in i):
                     contentlength = int(i[16: len(i)]) 
-                if("Connection: close" in i):
-                    # login again and continue to sending
-                    self.loginProcess() 
-                    self.DFS()
 
-            msg = mysocket.recv(contentlength).decode('ascii')
-            totalmessage = chunks + msg
-            mysocket.close()     
+            msg = self.socket.recv(contentlength).decode('ascii')
+            totalmessage = chunks + msg    
             return totalmessage
-        
+
+
     #Builds a log in request, using the cookies that we have found,
     def buildloginpostr(self):
         payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
@@ -212,7 +220,7 @@ class Crawler:
         msg = self.BuildNewSocket(req)
 
         #gets to the log in 
-        nextpage = f"http://{self.server}:{self.port}/accounts/login/?next=/fakebook/"
+        nextpage = "/accounts/login/?next=/fakebook/"
         req = self.BuildGetRequest(nextpage, False)
         msg = self.BuildNewSocket(req)
         self.findcookievariables(msg)
