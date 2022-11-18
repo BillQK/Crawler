@@ -14,7 +14,7 @@ links = []
 #array for storing the outgoing fakebook friends list for each person
 friendlinks = []
 #array for storing the flags
-flags = []
+flags = set()
 
 #HTML Parser class used for parsing HTML messages in this case mainly used for determining the flags
 #and valid fakebook friends, and fakebook friends lists
@@ -34,7 +34,8 @@ class MyHTMLParser(HTMLParser):
     def handle_data(self, data):
         if("FLAG" in data):
             print(data[6:len(data)])
-            flags.append(data)
+            flags.add(data)
+
         
 
 class Crawler:
@@ -48,8 +49,8 @@ class Crawler:
         self.middleware = ""
         self.testlist = []
         self.parser = MyHTMLParser()
-        self.visited = []
-        self.visitedpages = []
+        self.visited = set()
+        self.visitedpages = set()
         self.pagequeue = []
         self.queue = []
 
@@ -79,7 +80,7 @@ class Crawler:
 
             elif("HTTP/1.1 4" in msg or "HTTP/1.1 3" in msg):
                 self.queue.remove(currentfriend)
-                self.visited.append(currentfriend)
+                self.visited.add(currentfriend)
                 continue
 
             else:
@@ -92,7 +93,7 @@ class Crawler:
 
                 #if its passed the previous checks successfully we can remove the item from our queue and add it to visited
                 self.queue.remove(currentfriend)
-                self.visited.append(currentfriend)
+                self.visited.add(currentfriend)
 
                 self.pagequeue = friendlinks.copy()
 
@@ -116,12 +117,12 @@ class Crawler:
                     elif("HTTP/1.1 4" in nextpage or "HTTP/1.1 3" in nextpage):
                         #when its a invalid website or a server redirection, should do nothing
                         self.pagequeue.remove(friendpage)
-                        self.visitedpages.append(friendpage)
+                        self.visitedpages.add(friendpage)
                         continue
 
                     else:
                         self.pagequeue.remove(friendpage)
-                        self.visitedpages.append(friendpage)
+                        self.visitedpages.add(friendpage)
 
                         self.parser.feed(nextpage)
 
@@ -161,7 +162,7 @@ class Crawler:
     def BuildGetRequest(self, url, cookies):
         request = "GET " + url + " HTTP/1.1\r\nHost: " + self.server + "\r\n" 
         if(cookies):
-            cookiestring = "Cookie: " + self.csrf + "; " + self.sessionid + "\r\n"
+            cookiestring = "Cookie: " + self.csrf + "; " + self.sessionid + "\r\n" + "Connection: keep-alive\r\n" 
             request = request + cookiestring
 
         request = request + "\r\n"
@@ -175,7 +176,7 @@ class Crawler:
         mysocket.send(httpR.encode('ascii'))
         contentlength = 0
         
-        #recieving loop to properly recieve all information from an HTTP response
+        #receiving loop to properly recve all information from an HTTP response
         while True:
             chunks = ""
             while "\r\n\r\n" not in chunks:
@@ -185,7 +186,11 @@ class Crawler:
             headersplit = chunks.split("\r\n")
             for i in headersplit:
                 if("Content-Length:" in i):
-                    contentlength = int(i[16: len(i)])       
+                    contentlength = int(i[16: len(i)]) 
+                if("Connection: close" in i):
+                    # login again and continue to sending
+                    self.loginProcess() 
+                    self.DFS()
 
             msg = mysocket.recv(contentlength).decode('ascii')
             totalmessage = chunks + msg
@@ -196,7 +201,7 @@ class Crawler:
     def buildloginpostr(self):
         payload  = "username=" + self.username + "&password=" + self.password + "&csrfmiddlewaretoken="+ self.middleware + "&next=%2Ffakebook%2F\r\n\r\n"
         Contentlength = len(payload)
-        prequest = "POST /accounts/login/ HTTP/1.0\r\nHost: " + self.server + "\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: close\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://" + self.server + "/accounts/login/?next=/fakebook/\r\n\r\n"  
+        prequest = "POST /accounts/login/ HTTP/1.1\r\nHost: " + self.server + "\r\n" + "Cookie: "+ self.csrf + "; " + self.sessionid + "\r\n" + "Content-Type: application/x-www-form-urlencoded\r\n" + "Connection: keep-alive\r\n" + "Content-length: " + str(Contentlength) + "\r\n" + "Referrer: https://" + self.server + "/accounts/login/?next=/fakebook/\r\n\r\n"  
         post = prequest + payload
         return post
 
@@ -207,7 +212,7 @@ class Crawler:
         msg = self.BuildNewSocket(req)
 
         #gets to the log in 
-        nextpage = "/accounts/login/?next=/fakebook/"
+        nextpage = f"http://{self.server}:{self.port}/accounts/login/?next=/fakebook/"
         req = self.BuildGetRequest(nextpage, False)
         msg = self.BuildNewSocket(req)
         self.findcookievariables(msg)
